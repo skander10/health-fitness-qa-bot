@@ -10,11 +10,14 @@ function App() {
     setAnswer("");
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
+      const response = await fetch(
+        "https://health-fitness-qa-bot-backend.onrender.com/ask",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        },
+      );
       const data = await response.json();
       setAnswer(data.answer);
     } catch (error) {
