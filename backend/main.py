@@ -25,11 +25,12 @@ app.add_middleware(
 # Pydantic-Modell: legt fest, wie eine eingehende Anfrage aussehen MUSS (Validierung passiert automatisch)
 class QuestionRequest(BaseModel):
     question: str
+    thread_id: str
 
 
 @app.post("/ask")
 def ask(request: QuestionRequest) -> dict:
-    answer = ask_agent(request.question)
+    answer = ask_agent(request.question, thread_id=request.thread_id)
     return {"answer": answer}
 
 

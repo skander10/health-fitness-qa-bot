@@ -1,9 +1,18 @@
 import { useState } from "react";
 
+// Generiert eine einfache, zufällige ID -- reicht für unseren Zweck völlig
+function generateThreadId() {
+  return "thread-" + Math.random().toString(36).substring(2, 15);
+}
+
 function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // useState mit einer Funktion als Startwert: wird nur EINMAL beim ersten Rendern ausgeführt,
+  // nicht bei jedem Neu-Rendern -- genau das, was wir wollen (eine ID pro Sitzung)
+  const [threadId, setThreadId] = useState(() => generateThreadId());
 
   const handleAsk = async () => {
     setLoading(true);
@@ -15,7 +24,7 @@ function App() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question }),
+          body: JSON.stringify({ question, thread_id: threadId }),
         },
       );
       const data = await response.json();
@@ -27,6 +36,12 @@ function App() {
     }
   };
 
+  const handleNewChat = () => {
+    setThreadId(generateThreadId());
+    setQuestion("");
+    setAnswer("");
+  };
+
   return (
     <div
       style={{
@@ -35,7 +50,18 @@ function App() {
         fontFamily: "sans-serif",
       }}
     >
-      <h1>Health/Fitness QA-Bot</h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <h1>Health/Fitness QA-Bot</h1>
+        <button onClick={handleNewChat} style={{ height: "36px" }}>
+          Neuer Chat
+        </button>
+      </div>
 
       <textarea
         value={question}
@@ -60,6 +86,7 @@ function App() {
             padding: "12px",
             background: "#f0f0f0",
             borderRadius: "8px",
+            whiteSpace: "pre-wrap",
           }}
         >
           {answer}

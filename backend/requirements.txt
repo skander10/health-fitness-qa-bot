@@ -1,3 +1,8 @@
+# Was Render konkret damit macht, Schritt für Schritt:
+# 1) Render bekommt deinen Code (agent.py, main.py, requirements.txt, ...)
+# 2) Render liest die requirements.txt und führt automatisch pip install -r requirements.txt aus — das installiert alle aufgelisteten Pakete auf dem Server, genau wie du es lokal mit pip install ... gemacht hast
+# 3) Erst danach startet Render deine main.py — jetzt sind alle nötigen Pakete vorhanden, der Code läuft
+
 fastapi
 uvicorn
 pydantic
