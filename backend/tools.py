@@ -1,9 +1,20 @@
 import json
+
 from config import client, collection, llm, FINAL_VIDEO_ID
 from langchain.tools import tool
 
 
 
+from pydantic import BaseModel, Field
+
+
+class FactCheckResult(BaseModel):
+    bewertung: str = Field(
+        description="Eine von: Weitgehend bestätigt, Teilweise bestätigt, Umstritten, Nicht ausreichend belegt"
+    )
+    begruendung: str = Field(description="2-3 Sätze, warum diese Bewertung zutrifft")
+
+fact_check_llm = llm.with_structured_output(FactCheckResult)
 # ---------- Grundbausteine ----------
 
 def embed_query(text: str) -> list:
@@ -158,15 +169,15 @@ def fact_check_tool(claim_or_topic: str) -> str:
 Folgende Aussage stammt aus einem YouTube-Video:
 "{video_context}"
 
-Bewerte diese Aussage anhand deines wissenschaftlichen Wissens. Antworte in genau diesem Format:
+Bewerte diese Aussage anhand deines wissenschaftlichen Wissens."""
 
-BEWERTUNG: [Weitgehend bestätigt / Teilweise bestätigt / Umstritten / Nicht ausreichend belegt]
-BEGRÜNDUNG: [2-3 Sätze, warum]
-HINWEIS: Diese Einschätzung basiert auf allgemeinem KI-Wissen, nicht auf einer geprüften externen Datenbank."""
+    result: FactCheckResult = fact_check_llm.invoke(prompt)
 
-    response = llm.invoke(prompt)
-    return response.content
-
+    return (
+        f"BEWERTUNG: {result.bewertung}\n"
+        f"BEGRÜNDUNG: {result.begruendung}\n"
+        f"HINWEIS: Diese Einschätzung basiert auf allgemeinem KI-Wissen, nicht auf einer geprüften externen Datenbank."
+    )
 
 # Die fertige Liste, die agent.py importieren wird
 all_tools = [
