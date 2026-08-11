@@ -7,6 +7,15 @@ function generateThreadId() {
   return "thread-" + Math.random().toString(36).substring(2, 15);
 }
 
+const FEATURES = [
+  "Fragen zum Video-Inhalt",
+  "Zusammenfassung anfordern (allgemein oder detailliert)",
+  "Fakten-Check von Aussagen",
+  "Zeitstempel-Suche (z.B. 'was wurde bei Minute 20 gesagt')",
+  "Video-Infos (Titel, Kanal, Länge)",
+  "Erweiterte Suche bei komplexen Fragen",
+];
+
 function App() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
@@ -63,6 +72,18 @@ function App() {
           Neuer Chat
         </button>
       </header>
+
+      {messages.length === 0 && (
+        <section className="features" aria-label="Was du fragen kannst">
+          <ul className="features-list">
+            {FEATURES.map((feature) => (
+              <li key={feature} className="feature-chip">
+                {feature}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <main className="chat-area">
         {messages.length === 0 && !loading && (
