@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import "./App.css";
 
 // Generiert eine einfache, zufällige ID -- reicht für unseren Zweck völlig
 function generateThreadId() {
@@ -7,16 +9,24 @@ function generateThreadId() {
 
 function App() {
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // useState mit einer Funktion als Startwert: wird nur EINMAL beim ersten Rendern ausgeführt,
   // nicht bei jedem Neu-Rendern -- genau das, was wir wollen (eine ID pro Sitzung)
   const [threadId, setThreadId] = useState(() => generateThreadId());
 
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
   const handleAsk = async () => {
+    const currentQuestion = question;
+    setMessages((prev) => [...prev, { role: "user", content: currentQuestion }]);
+    setQuestion("");
     setLoading(true);
-    setAnswer("");
 
     try {
       const response = await fetch(
@@ -24,13 +34,16 @@ function App() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, thread_id: threadId }),
+          body: JSON.stringify({ question: currentQuestion, thread_id: threadId }),
         },
       );
       const data = await response.json();
-      setAnswer(data.answer);
+      setMessages((prev) => [...prev, { role: "assistant", content: data.answer }]);
     } catch (error) {
-      setAnswer("Fehler: Backend nicht erreichbar.");
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Fehler: Backend nicht erreichbar." },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -39,59 +52,76 @@ function App() {
   const handleNewChat = () => {
     setThreadId(generateThreadId());
     setQuestion("");
-    setAnswer("");
+    setMessages([]);
   };
 
   return (
-    <div
-      style={{
-        maxWidth: "600px",
-        margin: "40px auto",
-        fontFamily: "sans-serif",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <h1>Health/Fitness QA-Bot</h1>
-        <button onClick={handleNewChat} style={{ height: "36px" }}>
+    <div className="app">
+      <header className="app-header">
+        <h1 className="app-title">Health/Fitness QA-Bot</h1>
+        <button className="btn btn-secondary" onClick={handleNewChat}>
           Neuer Chat
         </button>
-      </div>
+      </header>
 
-      <textarea
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-        placeholder="Stell eine Frage zum Video..."
-        rows={3}
-        style={{ width: "100%", padding: "8px" }}
-      />
+      <main className="chat-area">
+        {messages.length === 0 && !loading && (
+          <p className="chat-empty">
+            Stell eine Frage zum Video, um loszulegen.
+          </p>
+        )}
 
-      <button
-        onClick={handleAsk}
-        disabled={loading || !question}
-        style={{ marginTop: "8px" }}
-      >
-        {loading ? "Frage wird beantwortet..." : "Senden"}
-      </button>
+        {messages.map((message, index) => {
+          const isError = message.content.startsWith("Fehler:");
+          return (
+            <div
+              key={index}
+              className={
+                message.role === "user"
+                  ? "message message-user"
+                  : isError
+                    ? "message message-assistant message-error"
+                    : "message message-assistant"
+              }
+            >
+              {message.role === "assistant" ? (
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              ) : (
+                message.content
+              )}
+            </div>
+          );
+        })}
 
-      {answer && (
-        <div
-          style={{
-            marginTop: "20px",
-            padding: "12px",
-            background: "#f0f0f0",
-            borderRadius: "8px",
-            whiteSpace: "pre-wrap",
-          }}
+        {loading && (
+          <div className="message message-assistant message-loading">
+            <span className="typing-dots" aria-label="Antwort wird geladen">
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+            </span>
+          </div>
+        )}
+
+        <div ref={chatEndRef} />
+      </main>
+
+      <footer className="input-bar">
+        <textarea
+          className="input-textarea"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="Stell eine Frage zum Video..."
+          rows={2}
+        />
+        <button
+          className="btn btn-primary"
+          onClick={handleAsk}
+          disabled={loading || !question}
         >
-          {answer}
-        </div>
-      )}
+          Senden
+        </button>
+      </footer>
     </div>
   );
 }
