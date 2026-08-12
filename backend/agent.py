@@ -3,8 +3,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from config import llm
 from tools import all_tools
 from tools import all_tools, clean_fact_check_format
+from langgraph.checkpoint.sqlite import SqliteSaver
+import sqlite3
 
-checkpointer = MemorySaver()
+
+#checkpointer = MemorySaver()
+conn = sqlite3.connect("../data/checkpoints.sqlite", check_same_thread=False)
+checkpointer = SqliteSaver(conn)
+
 SYSTEM_PROMPT = """Du bist ein hilfreicher Assistent für Fragen zu einem YouTube-Video über Ernährung und Gehirngesundheit.
 
 WICHTIGE REGEL: Wenn du das fact_check_tool nutzt, gib dessen Ergebnis EXAKT UND UNVERÄNDERT weiter, 
