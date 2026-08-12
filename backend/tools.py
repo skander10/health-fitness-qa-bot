@@ -1,6 +1,8 @@
 import json
+import re
 
-from config import client, collection, llm, FINAL_VIDEO_ID
+
+from config import client, collection, llm, FINAL_VIDEO_ID, nutrition_kb_collection, tavily_client
 from langchain.tools import tool
 
 
@@ -22,12 +24,17 @@ def embed_query(text: str) -> list:
     return response.data[0].embedding
 
 
-def search_video(query: str, n_results: int = 3) -> list:
+def search_video(query: str, n_results: int = 3, max_distance: float = 1.0) -> list:
     query_embedding = embed_query(query)
-    results = collection.query(query_embeddings=[query_embedding], n_results=n_results)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results,
+        include=["documents", "metadatas", "distances"],
+    )
     matches = []
-    for doc, metadata in zip(results["documents"][0], results["metadatas"][0]):
-        matches.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
+    for doc, metadata, distance in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+        if distance <= max_distance:
+            matches.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
     return matches
 
 
@@ -44,6 +51,54 @@ def get_full_transcript_text() -> str:
     sorted_chunks = sorted(all_chunks, key=lambda c: c["start"])
     return "\n".join(chunk["text"] for chunk in sorted_chunks)
 
+def add_knowledge_entry(text: str, source: str, topic: str, entry_id: str) -> None:
+    embedding = embed_query(text)
+    nutrition_kb_collection.upsert(
+        ids=[entry_id],
+        embeddings=[embedding],
+        documents=[text],
+        metadatas=[{"source": source, "topic": topic}],
+    )
+
+def search_web_for_health_fact(query: str) -> str:
+    response = tavily_client.search(
+        query=f"{query} nutrition health scientific evidence",
+        max_results=3,
+        include_answer=True,
+    )
+
+    if response.get("answer"):
+        return response["answer"]
+
+    # Fallback: falls Tavily keine direkte Zusammenfassung liefert, Ergebnisse manuell zusammenfassen
+    snippets = [r["content"][:300] for r in response.get("results", [])]
+    return "\n".join(snippets) if snippets else ""
+
+def search_nutrition_kb(query: str, topic: str = "health", n_results: int = 2, max_distance: float = 0.8) -> list:
+    query_embedding = embed_query(query)
+    results = nutrition_kb_collection.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results,
+        where={"topic": topic},
+        include=["documents", "metadatas", "distances"],
+    )
+
+    matches = []
+    for doc, metadata, distance in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+        if distance <= max_distance:
+            matches.append({"text": doc, "source": metadata["source"]})
+    return matches
+
+
+
+def clean_fact_check_format(answer: str) -> str:
+    """Entfernt Freitext vor 'BEWERTUNG:', falls das LLM trotz system_prompt etwas davorsetzt.
+    Greift nur bei Fact-Check-Antworten, andere Tools bleiben unangetastet."""
+    if "BEWERTUNG:" in answer:
+        match = re.search(r"BEWERTUNG:.*", answer, re.DOTALL)
+        if match:
+            return match.group(0)
+    return answer
 
 # ---------- Tool 1: RAG-Retrieval ----------
 
@@ -161,23 +216,62 @@ def fact_check_tool(claim_or_topic: str) -> str:
     """Prüft eine Ernährungs-/Fitness-Behauptung aus dem Video auf wissenschaftliche Plausibilität.
     Nutze dieses Tool, wenn der User wissen will, ob etwas 'stimmt', 'wissenschaftlich belegt' ist,
     oder wie vertrauenswürdig eine Aussage im Video ist."""
+
     video_chunks = search_video(claim_or_topic, n_results=2)
     video_context = "\n".join(c["text"] for c in video_chunks)
 
-    prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
+    if not video_context.strip():
+        video_context = "(Das Video behandelt dieses Thema nicht bzw. es gibt keinen thematisch passenden Ausschnitt.)"
 
-Folgende Aussage stammt aus einem YouTube-Video:
+    # Stufe 1: Kuratierte Nutrition-KB
+    kb_matches = search_nutrition_kb(claim_or_topic)
+    if kb_matches:
+        evidence = "\n".join(m["text"] for m in kb_matches)
+        sources = ", ".join(set(m["source"] for m in kb_matches))
+        evidence_note = f"Quelle: Kuratierte Wissensdatenbank ({sources})"
+    else:
+        # Stufe 2: Live-Websuche
+        web_result = search_web_for_health_fact(claim_or_topic)
+        if web_result:
+            evidence = web_result
+            evidence_note = "Quelle: Live-Websuche (Tavily) -- nicht manuell kuratiert, Ergebnis kann variieren"
+        else:
+            # Stufe 3: LLM-Wissen als letzter Ausweg
+            evidence = None
+            evidence_note = "Quelle: Allgemeines KI-Wissen -- weder Wissensdatenbank noch Websuche lieferten ein Ergebnis"
+
+    if evidence:
+        prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
+
+Aussage aus dem Video:
 "{video_context}"
 
-Bewerte diese Aussage anhand deines wissenschaftlichen Wissens."""
+Externe Evidenz zu diesem Thema:
+"{evidence}"
 
-    result: FactCheckResult = fact_check_llm.invoke(prompt)
+Bewerte die Video-Aussage anhand dieser externen Evidenz."""
+    else:
+        prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
+
+Aussage aus dem Video:
+"{video_context}"
+
+Keine externe Quelle verfügbar. Bewerte die Aussage anhand deines allgemeinen wissenschaftlichen Wissens."""
+
+    full_prompt = f"""{prompt}
+
+Antworte in genau diesem Format:
+BEWERTUNG: [Weitgehend bestätigt / Teilweise bestätigt / Umstritten / Nicht ausreichend belegt]
+BEGRÜNDUNG: [2-3 Sätze]"""
+
+    result: FactCheckResult = fact_check_llm.invoke(full_prompt)
 
     return (
         f"BEWERTUNG: {result.bewertung}\n"
         f"BEGRÜNDUNG: {result.begruendung}\n"
-        f"HINWEIS: Diese Einschätzung basiert auf allgemeinem KI-Wissen, nicht auf einer geprüften externen Datenbank."
+        f"HINWEIS: {evidence_note}"
     )
+
 
 # Die fertige Liste, die agent.py importieren wird
 all_tools = [

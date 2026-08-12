@@ -2,6 +2,7 @@ from langchain.agents import create_agent
 from langgraph.checkpoint.memory import MemorySaver
 from config import llm
 from tools import all_tools
+from tools import all_tools, clean_fact_check_format
 
 checkpointer = MemorySaver()
 SYSTEM_PROMPT = """Du bist ein hilfreicher Assistent für Fragen zu einem YouTube-Video über Ernährung und Gehirngesundheit.
@@ -19,7 +20,7 @@ def ask_agent(question: str, thread_id: str) -> str:
         {"messages": [{"role": "user", "content": question}]},
         config=config,
     )
-    return response["messages"][-1].content
+    return clean_fact_check_format(response["messages"][-1].content)
 
 
 def ask_agent_with_trace(question: str, thread_id: str) -> dict:
@@ -40,7 +41,7 @@ def ask_agent_with_trace(question: str, thread_id: str) -> dict:
             tool_context_parts.append(str(msg.content))
 
     return {
-        "answer": messages[-1].content,
+        "answer": clean_fact_check_format(messages[-1].content),
         "tools_used": tools_used,
         "context": "\n".join(tool_context_parts),
     }

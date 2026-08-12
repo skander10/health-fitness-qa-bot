@@ -11,3 +11,4 @@ openai
 chromadb
 langchain
 langchain-openai
+tavily-python
