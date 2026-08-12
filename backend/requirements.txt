@@ -12,3 +12,4 @@ chromadb
 langchain
 langchain-openai
 tavily-python
+langgraph-checkpoint-sqlite
