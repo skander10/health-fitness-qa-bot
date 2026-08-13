@@ -24,32 +24,31 @@ def embed_query(text: str) -> list:
     return response.data[0].embedding
 
 
-def search_video(query: str, n_results: int = 3, max_distance: float = 1.0) -> list:
+def search_video(query: str, n_results: int = 3, topic: str = None, video_id: str = None) -> list:
     query_embedding = embed_query(query)
+
+    # Filter dynamisch aufbauen: video_id (spezifisch) ODER topic (mehrere Videos desselben Themas)
+    where_filter = None
+    if video_id:
+        where_filter = {"video_id": video_id}
+    elif topic:
+        where_filter = {"topic": topic}
+
     results = collection.query(
         query_embeddings=[query_embedding],
         n_results=n_results,
-        include=["documents", "metadatas", "distances"],
+        where=where_filter,
     )
     matches = []
-    for doc, metadata, distance in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
-        if distance <= max_distance:
-            matches.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
+    for doc, metadata in zip(results["documents"][0], results["metadatas"][0]):
+        matches.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
     return matches
 
 
-def get_all_chunks_with_metadata() -> list:
-    results = collection.get(include=["documents", "metadatas"])
-    chunks = []
-    for doc, metadata in zip(results["documents"], results["metadatas"]):
-        chunks.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
-    return chunks
 
 
-def get_full_transcript_text() -> str:
-    all_chunks = get_all_chunks_with_metadata()
-    sorted_chunks = sorted(all_chunks, key=lambda c: c["start"])
-    return "\n".join(chunk["text"] for chunk in sorted_chunks)
+
+
 
 def add_knowledge_entry(text: str, source: str, topic: str, entry_id: str) -> None:
     embedding = embed_query(text)
@@ -100,20 +99,27 @@ def clean_fact_check_format(answer: str) -> str:
             return match.group(0)
     return answer
 
-# ---------- Tool 1: RAG-Retrieval ----------
 
-@tool
-def search_video_tool(query: str) -> str:
-    """Durchsucht das Transcript des Videos nach Informationen zu einer bestimmten Frage oder einem Thema.
-    Gib eine natürlichsprachliche Frage oder ein Stichwort ein. Gibt relevante Textausschnitte mit Zeitstempeln zurück."""
-    results = search_video(query, n_results=3)
-    formatted = ""
-    for r in results:
-        formatted += f"[{r['start']:.1f}s - {r['end']:.1f}s]: {r['text']}\n\n"
-    return formatted
+def get_all_chunks_with_metadata(topic: str = None, video_id: str = None) -> list:
+    where_filter = None
+    if video_id:
+        where_filter = {"video_id": video_id}
+    elif topic:
+        where_filter = {"topic": topic}
+
+    results = collection.get(include=["documents", "metadatas"], where=where_filter)
+    chunks = []
+    for doc, metadata in zip(results["documents"], results["metadatas"]):
+        chunks.append({"text": doc, "start": metadata["start"], "end": metadata["end"]})
+    return chunks
 
 
-# ---------- Tool 2: Multi-Query Retrieval ----------
+def get_full_transcript_text(topic: str = None, video_id: str = None) -> str:
+    all_chunks = get_all_chunks_with_metadata(topic=topic, video_id=video_id)
+    sorted_chunks = sorted(all_chunks, key=lambda c: c["start"])
+    return "\n".join(chunk["text"] for chunk in sorted_chunks)
+
+
 
 def generate_query_variations(question: str, n_variations: int = 3) -> list:
     prompt = f"""Generate {n_variations} different ways to search for information related to this question.
@@ -126,48 +132,65 @@ Question: {question}"""
     return [question] + variations
 
 
-@tool
-def multi_query_search_tool(question: str) -> str:
-    """Durchsucht das Video mit mehreren umformulierten Varianten der Frage für bessere Trefferquote.
-    Nutze dieses Tool bei komplexeren oder vagen Fragen, wenn die einfache Suche evtl. nicht ausreicht."""
-    queries = generate_query_variations(question)
-    all_results = []
-    seen_texts = set()
-    for q in queries:
-        for r in search_video(q, n_results=3):
-            if r["text"] not in seen_texts:
-                all_results.append(r)
-                seen_texts.add(r["text"])
-    formatted = ""
-    for r in all_results:
-        formatted += f"[{r['start']:.1f}s - {r['end']:.1f}s]: {r['text']}\n\n"
-    return formatted
+
+def make_tools(topic: str = None, video_id: str = None) -> list:
+    """Baut alle 6 Tools frisch, mit topic/video_id fest eingebettet (Closure).
+    So muss das LLM diese IDs nie selbst raten oder im Prompt mitschicken -- 
+    verhindert Fehler durch falsche/erfundene IDs."""
+
+
+# ---------- Tool 1: RAG-Retrieval ----------
+
+    @tool
+    def search_video_tool(query: str) -> str:
+        """Durchsucht das Transcript nach Informationen zu einer Frage oder einem Thema.
+        Gib eine natürlichsprachliche Frage oder ein Stichwort ein."""
+        results = search_video(query, n_results=3, topic=topic, video_id=video_id)
+        formatted = ""
+        for r in results:
+            formatted += f"[{r['start']:.1f}s - {r['end']:.1f}s]: {r['text']}\n\n"
+        return formatted
+
+    # ---------- Tool 2: Multi-Query Retrieval ----------
+
+
+    @tool
+    def multi_query_search_tool(question: str) -> str:
+        """Durchsucht mit mehreren umformulierten Varianten der Frage für bessere Trefferquote."""
+        queries = generate_query_variations(question)
+        all_results = []
+        seen_texts = set()
+        for q in queries:
+            for r in search_video(q, n_results=3, topic=topic, video_id=video_id):
+                if r["text"] not in seen_texts:
+                    all_results.append(r)
+                    seen_texts.add(r["text"])
+        formatted = ""
+        for r in all_results:
+            formatted += f"[{r['start']:.1f}s - {r['end']:.1f}s]: {r['text']}\n\n"
+        return formatted
 
 
 # ---------- Tool 3: Zeitstempel-Suche ----------
 
-@tool
-def search_by_timestamp_tool(seconds: float) -> str:
-    """Findet den Videoausschnitt, der zu einem bestimmten Zeitpunkt (in Sekunden) gehört.
-    Nutze dieses Tool, wenn der User nach einem konkreten Zeitpunkt fragt, z.B. 'Was wurde bei Minute 20 gesagt?'."""
-    all_chunks = get_all_chunks_with_metadata()
-    for chunk in all_chunks:
-        if chunk["start"] <= seconds <= chunk["end"]:
-            return f"[{chunk['start']:.1f}s - {chunk['end']:.1f}s]: {chunk['text']}"
-    return "Kein Inhalt für diesen Zeitpunkt gefunden."
+    @tool
+    def search_by_timestamp_tool(seconds: float) -> str:
+        """Findet den Videoausschnitt, der zu einem bestimmten Zeitpunkt (in Sekunden) gehört."""
+        all_chunks = get_all_chunks_with_metadata(topic=topic, video_id=video_id)
+        for chunk in all_chunks:
+            if chunk["start"] <= seconds <= chunk["end"]:
+                return f"[{chunk['start']:.1f}s - {chunk['end']:.1f}s]: {chunk['text']}"
+        return "Kein Inhalt für diesen Zeitpunkt gefunden."
+
+    # ---------- Tool 4: Summary ----------
 
 
-# ---------- Tool 4: Summary ----------
-
-@tool
-def summarize_video_tool(focus: str = "general") -> str:
-    """Erstellt eine Zusammenfassung des gesamten Videos.
-    Nutze dieses Tool, wenn der User um eine Zusammenfassung, einen Überblick, oder die Kernaussagen des Videos bittet.
-    'focus' kann 'general' (allgemeiner Überblick) oder 'technical' (strukturierte Extraktion konkreter Details wie Zutaten, Dosierungen, Übungen) sein."""
-    full_text = get_full_transcript_text()
-
-    if focus == "technical":
-        prompt = f"""Analysiere dieses Transcript und extrahiere die konkreten, umsetzbaren Informationen in strukturierter Form.
+    @tool
+    def summarize_video_tool(focus: str = "general") -> str:
+        """Erstellt eine Zusammenfassung des Videos. 'focus': 'general' oder 'technical'."""
+        full_text = get_full_transcript_text(topic=topic, video_id=video_id)
+        if focus == "technical":
+            prompt = f"""Analysiere dieses Transcript und extrahiere die konkreten, umsetzbaren Informationen in strukturierter Form.
 Falls es sich um ein Rezept handelt: liste Zutaten und Schritte.
 Falls es sich um Nahrungsergänzungsmittel/Dosierungen handelt: liste Substanz, empfohlene Menge, und Kontext.
 Falls es sich um Trainingsübungen handelt: liste Übung, Wiederholungen, Hinweise.
@@ -175,73 +198,64 @@ Bei anderen Inhalten: extrahiere die wichtigsten konkreten Fakten/Empfehlungen i
 
 Transcript:
 {full_text}"""
-    else:
-        prompt = f"""Fasse dieses Video in 3-5 Sätzen zusammen. Nenne die wichtigsten besprochenen Themen.
+        else:
+            prompt = f"""Fasse dieses Video in 3-5 Sätzen zusammen. Nenne die wichtigsten besprochenen Themen.
 
 Transcript:
 {full_text}"""
+        response = llm.invoke(prompt)
+        return response.content
 
-    response = llm.invoke(prompt)
-    return response.content
+
+    # ---------- Tool 5: Metadata ----------
 
 
-# ---------- Tool 5: Metadata ----------
-
-@tool
-def get_video_metadata_tool() -> str:
-    """Gibt Informationen über das Video selbst zurück: Titel, Kanal, Upload-Datum, Länge, Themen-Tags, Beschreibung.
-    Nutze dieses Tool, wenn der User nach dem Video selbst fragt (nicht nach seinem Inhalt) --
-    z.B. 'Wie heißt das Video?', 'Wie lang ist es?', 'Von wem ist es?', 'Worum geht es grob?'."""
-    with open(f"../data/video_metadata/{FINAL_VIDEO_ID}.json", "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-
-    duration_min = metadata["duration_seconds"] // 60
-    upload_date_formatted = f"{metadata['upload_date'][:4]}-{metadata['upload_date'][4:6]}-{metadata['upload_date'][6:]}"
-    tags_str = ", ".join(metadata.get("tags", []))
-
-    return (
-        f"Titel: {metadata['title']}\n"
-        f"Kanal: {metadata['channel']}\n"
-        f"Hochgeladen am: {upload_date_formatted}\n"
-        f"Länge: {duration_min} Minuten\n"
-        f"Themen: {tags_str}\n"
-        f"Beschreibung (Auszug): {metadata['description'][:300]}..."
-    )
+    @tool
+    def get_video_metadata_tool() -> str:
+        """Gibt Informationen über das Video zurück: Titel, Kanal, Upload-Datum, Länge, Themen-Tags."""
+        target_video_id = video_id or FINAL_VIDEO_ID
+        with open(f"../data/video_metadata/{target_video_id}.json", "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+        duration_min = metadata["duration_seconds"] // 60
+        upload_date_formatted = f"{metadata['upload_date'][:4]}-{metadata['upload_date'][4:6]}-{metadata['upload_date'][6:]}"
+        tags_str = ", ".join(metadata.get("tags", []))
+        return (
+            f"Titel: {metadata['title']}\n"
+            f"Kanal: {metadata['channel']}\n"
+            f"Hochgeladen am: {upload_date_formatted}\n"
+            f"Länge: {duration_min} Minuten\n"
+            f"Themen: {tags_str}\n"
+            f"Beschreibung (Auszug): {metadata['description'][:300]}..."
+        )
 
 
 # ---------- Tool 6: Fact-Check ----------
 
-@tool
-def fact_check_tool(claim_or_topic: str) -> str:
-    """Prüft eine Ernährungs-/Fitness-Behauptung aus dem Video auf wissenschaftliche Plausibilität.
-    Nutze dieses Tool, wenn der User wissen will, ob etwas 'stimmt', 'wissenschaftlich belegt' ist,
-    oder wie vertrauenswürdig eine Aussage im Video ist."""
+    @tool
+    def fact_check_tool(claim_or_topic: str) -> str:
+        """Prüft eine Ernährungs-/Fitness-Behauptung aus dem Video auf wissenschaftliche Plausibilität."""
+        video_chunks = search_video(claim_or_topic, n_results=2, topic=topic, video_id=video_id)
+        video_context = "\n".join(c["text"] for c in video_chunks)
 
-    video_chunks = search_video(claim_or_topic, n_results=2)
-    video_context = "\n".join(c["text"] for c in video_chunks)
+        if not video_context.strip():
+            video_context = "(Das Video behandelt dieses Thema nicht bzw. es gibt keinen thematisch passenden Ausschnitt.)"
 
-    if not video_context.strip():
-        video_context = "(Das Video behandelt dieses Thema nicht bzw. es gibt keinen thematisch passenden Ausschnitt.)"
-
-    # Stufe 1: Kuratierte Nutrition-KB
-    kb_matches = search_nutrition_kb(claim_or_topic)
-    if kb_matches:
-        evidence = "\n".join(m["text"] for m in kb_matches)
-        sources = ", ".join(set(m["source"] for m in kb_matches))
-        evidence_note = f"Quelle: Kuratierte Wissensdatenbank ({sources})"
-    else:
-        # Stufe 2: Live-Websuche
-        web_result = search_web_for_health_fact(claim_or_topic)
-        if web_result:
-            evidence = web_result
-            evidence_note = "Quelle: Live-Websuche (Tavily) -- nicht manuell kuratiert, Ergebnis kann variieren"
+        kb_matches = search_nutrition_kb(claim_or_topic)
+        if kb_matches:
+            evidence = "\n".join(m["text"] for m in kb_matches)
+            sources = ", ".join(set(m["source"] for m in kb_matches))
+            evidence_note = f"Quelle: Kuratierte Wissensdatenbank ({sources})"
         else:
-            # Stufe 3: LLM-Wissen als letzter Ausweg
-            evidence = None
-            evidence_note = "Quelle: Allgemeines KI-Wissen -- weder Wissensdatenbank noch Websuche lieferten ein Ergebnis"
+            web_result = search_web_for_health_fact(claim_or_topic)
+            if web_result:
+                evidence = web_result
+                evidence_note = "Quelle: Live-Websuche (Tavily) -- nicht manuell kuratiert, Ergebnis kann variieren"
+            else:
+                evidence = None
+                evidence_note = "Quelle: Allgemeines KI-Wissen -- weder Wissensdatenbank noch Websuche lieferten ein Ergebnis"
 
-    if evidence:
-        prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
+        if evidence:
+            prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
 
 Aussage aus dem Video:
 "{video_context}"
@@ -250,35 +264,32 @@ Externe Evidenz zu diesem Thema:
 "{evidence}"
 
 Bewerte die Video-Aussage anhand dieser externen Evidenz."""
-    else:
-        prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
+        else:
+            prompt = f"""Du bist ein wissenschaftlicher Fact-Checker im Bereich Ernährung/Fitness.
 
 Aussage aus dem Video:
 "{video_context}"
 
 Keine externe Quelle verfügbar. Bewerte die Aussage anhand deines allgemeinen wissenschaftlichen Wissens."""
 
-    full_prompt = f"""{prompt}
+        full_prompt = f"""{prompt}
 
 Antworte in genau diesem Format:
 BEWERTUNG: [Weitgehend bestätigt / Teilweise bestätigt / Umstritten / Nicht ausreichend belegt]
 BEGRÜNDUNG: [2-3 Sätze]"""
 
-    result: FactCheckResult = fact_check_llm.invoke(full_prompt)
+        result: FactCheckResult = fact_check_llm.invoke(full_prompt)
+        return (
+            f"BEWERTUNG: {result.bewertung}\n"
+            f"BEGRÜNDUNG: {result.begruendung}\n"
+            f"HINWEIS: {evidence_note}"
+        )
 
-    return (
-        f"BEWERTUNG: {result.bewertung}\n"
-        f"BEGRÜNDUNG: {result.begruendung}\n"
-        f"HINWEIS: {evidence_note}"
-    )
-
-
-# Die fertige Liste, die agent.py importieren wird
-all_tools = [
-    search_video_tool,
-    multi_query_search_tool,
-    search_by_timestamp_tool,
-    summarize_video_tool,
-    get_video_metadata_tool,
-    fact_check_tool,
-]
+    return [
+        search_video_tool,
+        multi_query_search_tool,
+        search_by_timestamp_tool,
+        summarize_video_tool,
+        get_video_metadata_tool,
+        fact_check_tool,
+    ]

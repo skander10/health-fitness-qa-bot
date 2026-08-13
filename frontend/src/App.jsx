@@ -7,6 +7,9 @@ function generateThreadId() {
   return "thread-" + Math.random().toString(36).substring(2, 15);
 }
 
+// Platzhalter, bis die echte Topic-Auswahl-UI gebaut ist
+const TOPIC = "health";
+
 const FEATURES = [
   "Fragen zum Video-Inhalt",
   "Zusammenfassung anfordern (allgemein oder detailliert)",
@@ -43,7 +46,7 @@ function App() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: currentQuestion, thread_id: threadId }),
+          body: JSON.stringify({ question: currentQuestion, thread_id: threadId, topic: TOPIC }),
         },
       );
       const data = await response.json();

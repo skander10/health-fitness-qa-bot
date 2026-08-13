@@ -10,28 +10,55 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from agent import ask_agent
+from config import collection
 
 app = FastAPI()
 
-# Erlaubt Anfragen vom React-Frontend (läuft während der Entwicklung meist auf Port 3000 oder 5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # für die Entwicklung offen; für echtes Deployment würden wir das später einschränken
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Pydantic-Modell: legt fest, wie eine eingehende Anfrage aussehen MUSS (Validierung passiert automatisch)
 class QuestionRequest(BaseModel):
     question: str
     thread_id: str
+    topic: str
+    video_id: str | None = None  # optional -- leer = über alle Videos des Topics suchen (Item 9)
 
 
 @app.post("/ask")
 def ask(request: QuestionRequest) -> dict:
-    answer = ask_agent(request.question, thread_id=request.thread_id)
+    answer = ask_agent(
+        request.question,
+        thread_id=request.thread_id,
+        topic=request.topic,
+        video_id=request.video_id,
+    )
     return {"answer": answer}
+
+
+@app.get("/topics")
+def list_topics() -> dict:
+    """Gibt alle Topics zurück, die aktuell in der Collection gespeichert sind."""
+    all_metadata = collection.get(include=["metadatas"])["metadatas"]
+    topics = sorted(set(m["topic"] for m in all_metadata if "topic" in m))
+    return {"topics": topics}
+
+
+@app.get("/topics/{topic}/videos")
+def list_videos_for_topic(topic: str) -> dict:
+    """Gibt alle Videos zurück, die zu einem bestimmten Topic bereits gespeichert sind."""
+    results = collection.get(include=["metadatas"], where={"topic": topic})
+    seen = {}
+    for m in results["metadatas"]:
+        vid = m.get("video_id")
+        if vid and vid not in seen:
+            seen[vid] = m.get("title", vid)
+    videos = [{"video_id": vid, "title": title} for vid, title in seen.items()]
+    return {"videos": videos}
 
 
 @app.get("/")
