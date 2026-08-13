@@ -4,6 +4,10 @@ const TOPIC_DESCRIPTIONS = {
   health: "Health & Nutrition Videos",
 };
 
+// Feste, bewusst einfache Liste statt eines zusätzlichen API-Calls -- reicht für den
+// aktuellen Umfang von 4 Videos.
+const RECIPE_VIDEO_IDS = new Set(["wiqjtX6kKUQ", "h2oJXzK9B9A"]);
+
 function NutrientBar({ label, grams, pct, className }) {
   return (
     <div className="nutrient-bar-row">
@@ -192,13 +196,15 @@ function Hub({ topics, videosByTopic, onStartChat, onBack, apiBaseUrl }) {
                     >
                       Chat starten
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => handleShowSummary(video.video_id)}
-                    >
-                      Nährwert-Übersicht
-                    </button>
+                    {RECIPE_VIDEO_IDS.has(video.video_id) && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => handleShowSummary(video.video_id)}
+                      >
+                        Nährwert-Übersicht
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
