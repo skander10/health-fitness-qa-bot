@@ -20,6 +20,56 @@ fact_check_llm = llm.with_structured_output(FactCheckResult)
 
 PRIORITY_TOPICS_WITH_KB = {"health"}  # später erweiterbar, z.B. + "sport"
 
+
+class RecipeNutritionSummary(BaseModel):
+    has_recipe: bool = Field(description="Ob das Transcript ein Rezept enthält")
+    ingredients: list[str] = Field(
+        description="Zutatenliste mit Mengenangaben, z.B. '200g Hähnchenbrust'. Leer falls kein Rezept."
+    )
+    steps: list[str] = Field(description="Kurze Zubereitungsschritte. Leer falls kein Rezept.")
+    calories_kcal: int = Field(description="Geschätzte Kalorien pro Portion in kcal (0 falls kein Rezept)")
+    protein_g: int = Field(description="Geschätztes Protein pro Portion in Gramm")
+    carbs_g: int = Field(description="Geschätzte Kohlenhydrate pro Portion in Gramm")
+    sugar_g: int = Field(description="Geschätzter Zucker pro Portion in Gramm")
+    fat_g: int = Field(description="Geschätztes Fett pro Portion in Gramm")
+    protein_pct: int = Field(description="Protein-Anteil an den Gesamtkalorien in Prozent")
+    carbs_pct: int = Field(description="Kohlenhydrat-Anteil an den Gesamtkalorien in Prozent")
+    fat_pct: int = Field(description="Fett-Anteil an den Gesamtkalorien in Prozent")
+    health_verdict: str = Field(description="Kurze Einschätzung (1-2 Sätze), wie gesund das Rezept ist")
+
+
+recipe_llm = llm.with_structured_output(RecipeNutritionSummary)
+
+# Cache pro video_id -- verhindert doppelte teure LLM-Calls, wenn Button UND Chat-Tool
+# für dasselbe Video genutzt werden
+_recipe_cache = {}
+
+
+def extract_recipe_nutrition(video_id: str) -> RecipeNutritionSummary:
+    if video_id in _recipe_cache:
+        return _recipe_cache[video_id]
+
+    full_text = get_full_transcript_text(video_id=video_id)
+
+    prompt = f"""Analysiere dieses Video-Transcript und extrahiere -- falls vorhanden -- das darin
+gezeigte Rezept mit geschätzten Nährwerten pro Portion, wie im Video beschrieben.
+
+Falls das Transcript KEIN Rezept enthält (z.B. ein reines Wissenschafts- oder Trainings-Video ohne
+Zubereitung von Speisen): setze has_recipe=false und alle übrigen Felder auf 0 bzw. leere Listen.
+
+Falls ein Rezept vorkommt: has_recipe=true, liste die Zutaten mit Mengenangaben (so genau wie im
+Video erwähnt), liste kurze nummerierte Zubereitungsschritte, und schätze die Nährwerte so
+realistisch wie möglich anhand der genannten Zutaten. protein_pct/carbs_pct/fat_pct sollen sich zu
+etwa 100 summieren.
+
+Transcript:
+{full_text}"""
+
+    result = recipe_llm.invoke(prompt)
+    _recipe_cache[video_id] = result
+    return result
+
+
 # ---------- Grundbausteine ----------
 
 def embed_query(text: str) -> list:
@@ -291,6 +341,38 @@ BEGRÜNDUNG: [2-3 Sätze]"""
             f"HINWEIS: {evidence_note}"
         )
 
+
+# ---------- Tool 7: Rezept-Info & Nährwerte ----------
+
+    @tool
+    def recipe_info_tool(question: str) -> str:
+        """Beantwortet Fragen zu Zutaten, Zubereitungsschritten oder Nährwerten EINES REZEPTS im
+        Video -- z.B. 'Was sind die Zutaten?', 'Wie wird das zubereitet?', 'Ist das Rezept gesund?',
+        'Wie viele Kalorien hat das?'. NICHT für allgemeine Fact-Check-Fragen zu wissenschaftlichen
+        Behauptungen nutzen (dafür gibt es fact_check_tool) -- nur wenn es konkret um ein Rezept/
+        Gericht aus dem Video geht."""
+        if not video_id:
+            return "Bitte wähle zuerst ein bestimmtes Rezeptvideo aus (aktuell ist 'Alle Videos' ausgewählt, kein einzelnes Video)."
+
+        summary = extract_recipe_nutrition(video_id)
+
+        if not summary.has_recipe:
+            return "In diesem Video wurde kein Rezept erkannt."
+
+        ingredients_text = "\n".join(f"- {i}" for i in summary.ingredients)
+        steps_text = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(summary.steps))
+
+        return (
+            f"Zutaten:\n{ingredients_text}\n\n"
+            f"Zubereitung:\n{steps_text}\n\n"
+            f"Geschätzte Nährwerte pro Portion: {summary.calories_kcal} kcal, "
+            f"davon {summary.protein_g}g Protein ({summary.protein_pct}%), "
+            f"{summary.carbs_g}g Kohlenhydrate ({summary.carbs_pct}%, davon {summary.sugar_g}g Zucker), "
+            f"{summary.fat_g}g Fett ({summary.fat_pct}%).\n\n"
+            f"Einschätzung: {summary.health_verdict}\n\n"
+            f"Hinweis: Geschätzt durch KI-Analyse des Video-Transcripts, keine geprüfte Nährwertangabe."
+        )
+
     return [
         search_video_tool,
         multi_query_search_tool,
@@ -298,4 +380,5 @@ BEGRÜNDUNG: [2-3 Sätze]"""
         summarize_video_tool,
         get_video_metadata_tool,
         fact_check_tool,
+        recipe_info_tool,
     ]

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from agent import ask_agent
 from config import collection
+from tools import extract_recipe_nutrition
 
 app = FastAPI()
 
@@ -59,6 +60,16 @@ def list_videos_for_topic(topic: str) -> dict:
             seen[vid] = m.get("title", vid)
     videos = [{"video_id": vid, "title": title} for vid, title in seen.items()]
     return {"videos": videos}
+
+
+@app.get("/videos/{video_id}/recipe-summary")
+def get_recipe_summary(video_id: str) -> dict:
+    """Schätzt Zutaten, Zubereitung und Nährwerte eines Rezepts direkt aus dem Video-Transcript (LLM, keine externe Nährwert-API)."""
+    summary = extract_recipe_nutrition(video_id)
+    return {
+        **summary.model_dump(),
+        "disclaimer": "Geschätzt durch KI-Analyse des Video-Transcripts, keine geprüfte Nährwertangabe",
+    }
 
 
 @app.get("/")

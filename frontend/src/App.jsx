@@ -252,6 +252,7 @@ function App() {
             videosByTopic={videosByTopic}
             onStartChat={startChatFromHub}
             onBack={() => setView("chat")}
+            apiBaseUrl={API_BASE_URL}
           />
         ) : (
           <div className="app-content">
