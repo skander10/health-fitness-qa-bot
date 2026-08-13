@@ -17,6 +17,9 @@ class FactCheckResult(BaseModel):
     begruendung: str = Field(description="2-3 Sätze, warum diese Bewertung zutrifft")
 
 fact_check_llm = llm.with_structured_output(FactCheckResult)
+
+PRIORITY_TOPICS_WITH_KB = {"health"}  # später erweiterbar, z.B. + "sport"
+
 # ---------- Grundbausteine ----------
 
 def embed_query(text: str) -> list:
@@ -240,7 +243,10 @@ Transcript:
         if not video_context.strip():
             video_context = "(Das Video behandelt dieses Thema nicht bzw. es gibt keinen thematisch passenden Ausschnitt.)"
 
-        kb_matches = search_nutrition_kb(claim_or_topic)
+        if topic in PRIORITY_TOPICS_WITH_KB:
+            kb_matches = search_nutrition_kb(claim_or_topic, topic=topic)
+        else:
+            kb_matches = []  # Nicht-Priority-Topic -> direkt zu Websuche-Fallback in der bestehenden 3-Stufen-Kette
         if kb_matches:
             evidence = "\n".join(m["text"] for m in kb_matches)
             sources = ", ".join(set(m["source"] for m in kb_matches))
