@@ -44,6 +44,7 @@ function App() {
   const [topics, setTopics] = useState([]);
   const [activeTopic, setActiveTopic] = useState(null);
   const [videos, setVideos] = useState([]);
+  const [videosLoading, setVideosLoading] = useState(false);
   const [activeVideoId, setActiveVideoId] = useState(null);
   const [videosByTopic, setVideosByTopic] = useState({});
 
@@ -76,6 +77,7 @@ function App() {
   // Videos für das aktive Topic laden (für die Sidebar), Cache für die Hub-Seite mitfüllen
   useEffect(() => {
     if (!activeTopic) return;
+    setVideosLoading(true);
     fetch(`${API_BASE_URL}/topics/${activeTopic}/videos`)
       .then((res) => res.json())
       .then((data) => {
@@ -83,7 +85,8 @@ function App() {
         setVideos(vids);
         setVideosByTopic((prev) => ({ ...prev, [activeTopic]: vids }));
       })
-      .catch(() => setVideos([]));
+      .catch(() => setVideos([]))
+      .finally(() => setVideosLoading(false));
   }, [activeTopic]);
 
   // Auf der Hub-Seite: Videos für alle Topics laden, die noch nicht im Cache sind
@@ -235,6 +238,7 @@ function App() {
         activeTopic={activeTopic}
         onSelectTopic={selectTopic}
         videos={videos}
+        videosLoading={videosLoading}
         activeVideoId={activeVideoId}
         onSelectVideo={switchVideo}
         onSelectAllVideos={() => switchVideo(null)}

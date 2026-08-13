@@ -32,6 +32,7 @@ function Sidebar({
   activeTopic,
   onSelectTopic,
   videos,
+  videosLoading,
   activeVideoId,
   onSelectVideo,
   onSelectAllVideos,
@@ -50,54 +51,75 @@ function Sidebar({
       </button>
 
       <CollapsibleSection title="Themen">
-        {topics.length === 0 && <p className="sidebar-empty">Lade Themen…</p>}
-        <ul className="sidebar-list">
-          {topics.map((topic) => (
-            <li key={topic}>
-              <button
-                type="button"
-                className={
-                  "sidebar-list-item" +
-                  (topic === activeTopic ? " sidebar-list-item-active" : "")
-                }
-                onClick={() => onSelectTopic(topic)}
-              >
-                {topic}
-              </button>
-            </li>
-          ))}
-        </ul>
+        {topics.length === 0 ? (
+          <div className="loading-indicator">
+            <span className="typing-dots" aria-label="Themen werden geladen">
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+            </span>
+            <span>Lade Themen…</span>
+          </div>
+        ) : (
+          <ul className="sidebar-list">
+            {topics.map((topic) => (
+              <li key={topic}>
+                <button
+                  type="button"
+                  className={
+                    "sidebar-list-item sidebar-list-item-topic" +
+                    (topic === activeTopic ? " sidebar-list-item-active" : "")
+                  }
+                  onClick={() => onSelectTopic(topic)}
+                >
+                  {topic}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection title="Videos">
-        <ul className="sidebar-list">
-          <li>
-            <button
-              type="button"
-              className={
-                "sidebar-list-item" +
-                (activeVideoId == null ? " sidebar-list-item-active" : "")
-              }
-              onClick={onSelectAllVideos}
-            >
-              Alle Videos dieses Themas
-            </button>
-          </li>
-          {videos.map((video) => (
-            <li key={video.video_id}>
+        {videosLoading ? (
+          <div className="loading-indicator">
+            <span className="typing-dots" aria-label="Videos werden geladen">
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+            </span>
+            <span>Lade Videos…</span>
+          </div>
+        ) : (
+          <ul className="sidebar-list">
+            <li>
               <button
                 type="button"
                 className={
                   "sidebar-list-item" +
-                  (video.video_id === activeVideoId ? " sidebar-list-item-active" : "")
+                  (activeVideoId == null ? " sidebar-list-item-active" : "")
                 }
-                onClick={() => onSelectVideo(video.video_id)}
+                onClick={onSelectAllVideos}
               >
-                {video.title}
+                Alle Videos dieses Themas
               </button>
             </li>
-          ))}
-        </ul>
+            {videos.map((video) => (
+              <li key={video.video_id}>
+                <button
+                  type="button"
+                  className={
+                    "sidebar-list-item" +
+                    (video.video_id === activeVideoId ? " sidebar-list-item-active" : "")
+                  }
+                  onClick={() => onSelectVideo(video.video_id)}
+                >
+                  {video.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection title="Funktionen">

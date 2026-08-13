@@ -120,7 +120,8 @@ body {
 
 .conversation-preview-label {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   opacity: 0.75;
@@ -240,6 +241,19 @@ body {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Generischer Lade-Indikator (Sidebar-Themen/Videos, Hub-Themen, Rezept-Modal) --
+   nutzt dieselben typing-dots wie der Chat-Loading-Zustand, nur mit Label daneben. */
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 0;
+  color: var(--color-text);
+  opacity: 0.55;
+  font-size: 0.9rem;
 }
 
 /* Input bar */
@@ -418,6 +432,12 @@ body {
   color: #fff;
 }
 
+/* Themen-Namen groß schreiben, analog zur Hub-Seite (.hub-topic-title) --
+   die Daten selbst bleiben kleingeschrieben ("health", "sport") */
+.sidebar-list-item-topic {
+  text-transform: capitalize;
+}
+
 .sidebar-empty {
   font-size: 0.82rem;
   opacity: 0.55;
@@ -467,6 +487,7 @@ body {
 .hub-topic-title {
   font-family: var(--font-display);
   font-size: 1.2rem;
+  font-weight: 600;
   margin: 0;
   text-transform: capitalize;
 }
@@ -488,9 +509,9 @@ body {
   flex-direction: column;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--color-surface);
 }
 
@@ -556,6 +577,10 @@ body {
   background: var(--color-surface);
   border-radius: 12px;
   border: 1px solid var(--color-border);
+  /* einzige Schatten-Nutzung im ganzen UI -- bewusste Ausnahme, da das Panel
+     über einem abgedunkelten Overlay schwebt und sich sonst nicht vom Rest
+     der (sonst durchgehend schattenlosen) Oberfläche abhebt */
+  box-shadow: 0 12px 32px rgba(15, 27, 20, 0.18);
   max-width: 480px;
   width: 100%;
   max-height: 85vh;
@@ -573,6 +598,7 @@ body {
 .modal-title {
   font-family: var(--font-display);
   font-size: 1.1rem;
+  font-weight: 600;
   margin: 0;
 }
 
@@ -591,6 +617,23 @@ body {
   opacity: 1;
 }
 
+.modal-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  color: var(--color-text);
+  opacity: 0.55;
+  font-size: 0.95rem;
+}
+
+.modal-error {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  color: var(--color-error);
+  font-size: 0.9rem;
+}
+
 .recipe-summary {
   display: flex;
   flex-direction: column;
@@ -606,9 +649,10 @@ body {
 .recipe-summary-heading {
   margin: 0;
   font-size: 0.8rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  opacity: 0.65;
+  opacity: 0.75;
 }
 
 .recipe-summary-list {

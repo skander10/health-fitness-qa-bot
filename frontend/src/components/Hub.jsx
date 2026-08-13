@@ -37,16 +37,25 @@ function RecipeSummaryModal({ loading, error, data, onClose }) {
           </button>
         </div>
 
-        {loading && <p className="chat-empty">Analysiere Rezept…</p>}
+        {loading && (
+          <div className="loading-indicator">
+            <span className="typing-dots" aria-label="Rezept wird analysiert">
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+              <span className="typing-dot"></span>
+            </span>
+            <span>Analysiere Rezept…</span>
+          </div>
+        )}
 
         {error && (
-          <p className="message message-error">
+          <p className="modal-error">
             Fehler beim Laden der Nährwert-Übersicht.
           </p>
         )}
 
         {data && !data.has_recipe && (
-          <p className="chat-empty">Kein Rezept in diesem Video erkannt.</p>
+          <p className="modal-empty">Kein Rezept in diesem Video erkannt.</p>
         )}
 
         {data && data.has_recipe && (
@@ -151,7 +160,16 @@ function Hub({ topics, videosByTopic, onStartChat, onBack, apiBaseUrl }) {
         </button>
       </header>
 
-      {topics.length === 0 && <p className="chat-empty">Lade Themen…</p>}
+      {topics.length === 0 && (
+        <div className="loading-indicator">
+          <span className="typing-dots" aria-label="Themen werden geladen">
+            <span className="typing-dot"></span>
+            <span className="typing-dot"></span>
+            <span className="typing-dot"></span>
+          </span>
+          <span>Lade Themen…</span>
+        </div>
+      )}
 
       {topics.map((topic) => {
         const videos = videosByTopic[topic] || [];
