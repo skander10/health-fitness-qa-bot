@@ -47,7 +47,10 @@ function App() {
   const [activeVideoId, setActiveVideoId] = useState(null);
   const [videosByTopic, setVideosByTopic] = useState({});
 
-  const [conversations, setConversations] = useState(() => loadConversationsFromStorage());
+  const [conversations, setConversations] = useState(() =>
+    loadConversationsFromStorage(),
+  );
+  const [previewConversation, setPreviewConversation] = useState(null);
 
   const chatEndRef = useRef(null);
 
@@ -103,9 +106,28 @@ function App() {
     setConversations((prev) => {
       if (prev.some((c) => c.threadId === savedThreadId)) return prev;
       const next = [
-        { threadId: savedThreadId, topic, videoId: videoId ?? null, label: formatConversationLabel(topic) },
+        {
+          threadId: savedThreadId,
+          topic,
+          videoId: videoId ?? null,
+          label: formatConversationLabel(topic),
+        },
         ...prev,
       ];
+      localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const updateConversationExchange = (
+    savedThreadId,
+    lastQuestion,
+    lastAnswer,
+  ) => {
+    setConversations((prev) => {
+      const next = prev.map((c) =>
+        c.threadId === savedThreadId ? { ...c, lastQuestion, lastAnswer } : c,
+      );
       localStorage.setItem(CONVERSATIONS_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
@@ -120,7 +142,11 @@ function App() {
 
     ensureConversationSaved(currentThreadId, currentTopic, currentVideoId);
 
-    setMessages((prev) => [...prev, { role: "user", content: currentQuestion }]);
+    setPreviewConversation(null);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: currentQuestion },
+    ]);
     setQuestion("");
     setLoading(true);
 
@@ -136,7 +162,11 @@ function App() {
         }),
       });
       const data = await response.json();
-      setMessages((prev) => [...prev, { role: "assistant", content: data.answer }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.answer },
+      ]);
+      updateConversationExchange(currentThreadId, currentQuestion, data.answer);
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -151,6 +181,7 @@ function App() {
     setThreadId(generateThreadId());
     setQuestion("");
     setMessages([]);
+    setPreviewConversation(null);
     setView("chat");
   };
 
@@ -161,6 +192,7 @@ function App() {
     setThreadId(generateThreadId());
     setMessages([]);
     setQuestion("");
+    setPreviewConversation(null);
   };
 
   const switchVideo = (videoId) => {
@@ -169,6 +201,7 @@ function App() {
     setThreadId(generateThreadId());
     setMessages([]);
     setQuestion("");
+    setPreviewConversation(null);
   };
 
   const startChatFromHub = (topic, videoId) => {
@@ -177,6 +210,7 @@ function App() {
     setThreadId(generateThreadId());
     setMessages([]);
     setQuestion("");
+    setPreviewConversation(null);
     setView("chat");
   };
 
@@ -187,10 +221,11 @@ function App() {
     setMessages([]);
     setQuestion("");
     setView("chat");
+    setPreviewConversation(conv.lastQuestion || conv.lastAnswer ? conv : null);
   };
 
   const activeVideoTitle = activeVideoId
-    ? videos.find((v) => v.video_id === activeVideoId)?.title ?? activeVideoId
+    ? (videos.find((v) => v.video_id === activeVideoId)?.title ?? activeVideoId)
     : null;
 
   return (
@@ -223,12 +258,30 @@ function App() {
             <header className="app-header">
               <p className="app-context">
                 {activeTopic ?? "Lade Thema…"}
-                {activeVideoId ? ` · ${activeVideoTitle}` : activeTopic ? " · Alle Videos" : ""}
+                {activeVideoId
+                  ? ` · ${activeVideoTitle}`
+                  : activeTopic
+                    ? " · Alle Videos"
+                    : ""}
               </p>
             </header>
 
             <main className="chat-area">
-              {messages.length === 0 && !loading && (
+              {previewConversation && messages.length === 0 && (
+                <div className="conversation-preview">
+                  <p className="conversation-preview-label">
+                    Letzter Austausch in diesem Gespräch:
+                  </p>
+                  <p className="conversation-preview-question">
+                    {previewConversation.lastQuestion}
+                  </p>
+                  <p className="conversation-preview-answer">
+                    {previewConversation.lastAnswer}
+                  </p>
+                </div>
+              )}
+
+              {messages.length === 0 && !loading && !previewConversation && (
                 <p className="chat-empty">
                   Stell eine Frage zum Video, um loszulegen.
                 </p>
@@ -258,7 +311,10 @@ function App() {
 
               {loading && (
                 <div className="message message-assistant message-loading">
-                  <span className="typing-dots" aria-label="Antwort wird geladen">
+                  <span
+                    className="typing-dots"
+                    aria-label="Antwort wird geladen"
+                  >
                     <span className="typing-dot"></span>
                     <span className="typing-dot"></span>
                     <span className="typing-dot"></span>

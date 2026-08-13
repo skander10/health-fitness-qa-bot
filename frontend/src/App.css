@@ -105,6 +105,38 @@ body {
   gap: 12px;
 }
 
+.conversation-preview {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  opacity: 0.7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conversation-preview-label {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+
+.conversation-preview-question {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.conversation-preview-answer {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .chat-empty {
   margin: auto;
   color: var(--color-text);
